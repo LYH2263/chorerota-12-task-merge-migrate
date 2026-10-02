@@ -3,6 +3,7 @@ import Board from './pages/Board.vue'
 import Members from './pages/Members.vue'
 import Tasks from './pages/Tasks.vue'
 import Swaps from './pages/Swaps.vue'
+import Merges from './pages/Merges.vue'
 import Settings from './pages/Settings.vue'
 export default createRouter({
   history: createWebHistory(),
@@ -11,6 +12,7 @@ export default createRouter({
     { path: '/members', component: Members },
     { path: '/tasks', component: Tasks },
     { path: '/swaps', component: Swaps },
+    { path: '/merges', component: Merges },
     { path: '/settings', component: Settings },
   ],
 })

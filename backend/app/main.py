@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app import seed
 from app.db import connect
 from app.engines.rota import build_week_slots, swap_legal, apply_swap
+from app.modules import task_merge
 
 app = FastAPI(title="Chorerota", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -36,6 +37,49 @@ def add_task(body: dict):
     cur = c.execute("INSERT INTO tasks(title,weight,data_quality) VALUES (?,?,?)",
                     (body.get("title","任务"), int(body.get("weight",1)), body.get("data_quality","clean")))
     c.commit(); tid = cur.lastrowid; c.close(); return {"id": tid}
+
+class MergeBody(BaseModel):
+    task_a: int
+    task_b: int
+    week_ids: list[int] = []
+    title: str = ""
+
+@app.post("/api/tasks/merge/preview")
+def merge_preview(body: MergeBody):
+    c = connect()
+    try:
+        r = task_merge.preview_merge(c, body.task_a, body.task_b, body.week_ids, body.title)
+    except task_merge.MergeError as e:
+        c.close(); raise HTTPException(400, str(e))
+    c.close(); return r
+
+@app.post("/api/tasks/merge")
+def merge_confirm(body: MergeBody):
+    c = connect()
+    try:
+        r = task_merge.confirm_merge(c, body.task_a, body.task_b, body.week_ids, body.title)
+    except task_merge.MergeError as e:
+        c.close(); raise HTTPException(400, str(e))
+    c.commit(); c.close(); return r
+
+@app.get("/api/merges")
+def list_merges():
+    c = connect(); rows = task_merge.list_merges(c); c.close(); return rows
+
+@app.get("/api/merges/{merge_id}")
+def get_merge(merge_id: int):
+    c = connect(); d = task_merge.merge_detail(c, merge_id); c.close()
+    if not d: raise HTTPException(404, "merge not found")
+    return d
+
+@app.post("/api/merges/{merge_id}/split-back")
+def merge_split_back(merge_id: int):
+    c = connect()
+    try:
+        r = task_merge.split_back(c, merge_id)
+    except task_merge.MergeError as e:
+        c.close(); raise HTTPException(400, str(e))
+    c.commit(); c.close(); return r
 
 @app.get("/api/weeks")
 def list_weeks():
