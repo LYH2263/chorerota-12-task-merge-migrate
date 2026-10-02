@@ -6,6 +6,7 @@
       <router-link to="/members">成员</router-link>
       <router-link to="/tasks">任务</router-link>
       <router-link to="/swaps">对调</router-link>
+      <router-link to="/migrations">迁移单</router-link>
       <router-link to="/settings">设置</router-link>
     </nav>
   </div>

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app import seed
 from app.db import connect
 from app.engines.rota import build_week_slots, swap_legal, apply_swap
+from app.modules.task_merge import preview_merge, apply_merge, split_merge, list_merges, MergeError
 
 app = FastAPI(title="Chorerota", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -40,6 +41,51 @@ def add_task(body: dict):
 @app.get("/api/weeks")
 def list_weeks():
     c = connect(); rows = [dict(r) for r in c.execute("SELECT * FROM weeks")]; c.close(); return rows
+
+class MergeBody(BaseModel):
+    task_a: int
+    task_b: int
+    title: str = ""
+    week_ids: list[int] = []
+
+def _merge_http(e: MergeError) -> HTTPException:
+    return HTTPException(400, {"reason": e.reason, **e.detail})
+
+@app.post("/api/tasks/merge/preview")
+def merge_preview(body: MergeBody):
+    """合并预览：返回将迁格数与目标标题，不写库。"""
+    c = connect()
+    try:
+        p = preview_merge(c, body.task_a, body.task_b, body.title, body.week_ids)
+    except MergeError as e:
+        c.close(); raise _merge_http(e)
+    c.close()
+    p.pop("cells")  # 预览只回统计与目标标题，逐格明细确认后见迁移单
+    return p
+
+@app.post("/api/tasks/merge/confirm")
+def merge_confirm(body: MergeBody):
+    """确认合并：建新任务、迁选中周的格、写迁移清单，单事务提交。"""
+    c = connect()
+    try:
+        r = apply_merge(c, body.task_a, body.task_b, body.title, body.week_ids)
+    except MergeError as e:
+        c.rollback(); c.close(); raise _merge_http(e)
+    c.commit(); c.close(); return r
+
+@app.get("/api/merges")
+def merges():
+    c = connect(); rows = list_merges(c); c.close(); return rows
+
+@app.post("/api/merges/{merge_id}/split")
+def merge_split(merge_id: int):
+    """显式拆回：全部已迁格可还原才执行，否则整体拒绝。"""
+    c = connect()
+    try:
+        r = split_merge(c, merge_id)
+    except MergeError as e:
+        c.rollback(); c.close(); raise _merge_http(e)
+    c.commit(); c.close(); return r
 
 @app.get("/api/weeks/{week_id}/board")
 def week_board(week_id: int):
